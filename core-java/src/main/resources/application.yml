@@ -1,0 +1,37 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: core-eventos
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/eventos}
+    username: ${DB_USER:eventos}
+    password: ${DB_PASSWORD:eventos}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none          # el esquema lo crea db/init/01_esquema.sql
+    properties:
+      hibernate:
+        jdbc.time_zone: America/Argentina/Buenos_Aires
+  jackson:
+    time-zone: America/Argentina/Buenos_Aires
+    default-property-inclusion: non_null
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:cambiar-este-secreto-compartido-por-java-y-python-2026}
+    expiracion-minutos: ${JWT_EXPIRACION_MIN:480}
+  analitica:
+    url: ${ANALITICA_URL:http://localhost:8000}
+    entrenar-al-iniciar: ${ENTRENAR_AL_INICIAR:true}
+  cors:
+    origenes: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints.web.exposure.include: health,info

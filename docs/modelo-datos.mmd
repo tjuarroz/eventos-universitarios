@@ -1,0 +1,64 @@
+erDiagram
+    roles ||--o{ usuarios : "tiene"
+    usuarios ||--o{ eventos : "organiza"
+    salas ||--o{ eventos : "se asigna a"
+    eventos ||--o{ inscripciones : "recibe"
+    usuarios ||--o{ inscripciones : "realiza"
+    inscripciones ||--o| asistencias : "registra"
+    usuarios ||--o{ asistencias : "registrada_por"
+    eventos ||--o{ predicciones : "tiene"
+    salas ||--o{ predicciones : "sala_recomendada"
+    roles { int id PK
+        varchar nombre UK
+        varchar descripcion }
+    usuarios { int id PK
+        varchar nombre
+        varchar apellido
+        varchar email UK
+        varchar password_hash
+        varchar categoria
+        varchar facultad
+        int rol_id FK
+        boolean activo }
+    salas { int id PK
+        varchar nombre UK
+        varchar edificio
+        varchar facultad
+        int capacidad
+        varchar equipamiento
+        boolean activa }
+    eventos { int id PK
+        varchar titulo
+        text descripcion
+        varchar tipo
+        varchar facultad
+        date fecha
+        time hora_inicio
+        time hora_fin
+        int sala_id FK
+        int capacidad
+        varchar clima
+        varchar estado
+        int organizador_id FK }
+    inscripciones { int id PK
+        int evento_id FK
+        int usuario_id FK
+        varchar codigo UK
+        varchar estado
+        timestamp fecha_inscripcion }
+    asistencias { int id PK
+        int inscripcion_id FK
+        varchar metodo
+        int registrada_por FK
+        timestamp registrada_en }
+    predicciones { int id PK
+        int evento_id FK
+        int asistencia_estimada
+        int intervalo_inferior
+        int intervalo_superior
+        numeric prob_sobrecapacidad
+        numeric prob_baja_asistencia
+        int sala_recomendada_id FK
+        varchar modelo
+        text detalle
+        timestamp generada_en }

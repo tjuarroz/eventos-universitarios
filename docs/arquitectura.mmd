@@ -1,0 +1,29 @@
+flowchart TB
+    U["Usuarios<br/>estudiantes · docentes · personal<br/>organizadores · apoyo · admin"]
+    subgraph FE["Front-end · React + Vite (nginx :3000)"]
+        direction LR
+        F1["Login / registro"]
+        F2["Eventos, detalle,<br/>inscripción y QR"]
+        F3["Panel del organizador<br/>y registro de asistencia"]
+        F4["Dashboard predictivo<br/>(Recharts)"]
+    end
+    subgraph J["Microservicio 1 · Java 21 + Spring Boot (:8080)"]
+        J1["Autenticación JWT<br/>usuarios y roles"]
+        J2["CRUD eventos, salas,<br/>inscripciones, asistencia"]
+        J3["Panel y estadísticas"]
+        J4["Cliente de analítica"]
+    end
+    subgraph P["Microservicio 2 · Python + FastAPI (:8000)"]
+        direction LR
+        P1["Entrenamiento<br/>Ridge · Random Forest"]
+        P2["Predicción: asistencia,<br/>probabilidades, sala"]
+        P3["Tendencias<br/>series temporales (Holt)"]
+    end
+    DB[("PostgreSQL 16<br/>usuarios · roles · eventos<br/>inscripciones · asistencias<br/>salas · predicciones")]
+    M[("Volumen /data<br/>modelo.joblib")]
+    U --> FE
+    FE -- "REST /api (JWT)" --> J
+    FE -- "REST /analitica (JWT)<br/>tendencias y métricas" --> P
+    J4 -- "REST: histórico y<br/>eventos a predecir" --> P
+    J -- "JPA / JDBC" --> DB
+    P --- M
