@@ -7,7 +7,7 @@ import { analitica, api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { Aviso, Cargando, Kpi, useCarga, Vacio } from '../components/comunes.jsx'
 import { REFERENCIA, SERIES, TablaDatos, TooltipCaja, ejeProps, grillaProps } from '../components/graficos.jsx'
-import { TIPOS, fechaCorta, mesCorto, pct } from '../util.js'
+import { TIPOS, fechaCorta, mesCorto, pct, puntaje } from '../util.js'
 import { riesgo } from './PrediccionEvento.jsx'
 
 const corto = (t, n = 18) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
@@ -20,14 +20,77 @@ function BarrasSimples({ datos, clave, formato, alto = 200 }) {
         <XAxis dataKey="grupo" {...ejeProps} interval={0} />
         <YAxis {...ejeProps} width={40} tickFormatter={formato} />
         <Tooltip content={<TooltipCaja formato={formato} />} cursor={{ fill: 'rgba(11,11,11,0.04)' }} />
-        <Bar dataKey={clave} name="Tasa de asistencia" fill={SERIES[0]} radius={[4, 4, 0, 0]} />
+        <Bar dataKey={clave} name="Tasa de asistencia" fill={SERIES[0]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   )
 }
 
+/** Satisfacción de los asistentes (encuestas), agrupada y por mes. */
+function Satisfaccion({ esAdmin }) {
+  const [agrupar, setAgrupar] = useState('tipo')
+  const { datos: s, error } = useCarga(() => api.get('/api/encuestas/satisfaccion', { agrupar }), [agrupar])
+  const nombre = (g) => (agrupar === 'tipo' ? TIPOS[g] ?? g : g)
+  const grupos = (s?.grupos ?? []).map((g) => ({ ...g, etiqueta: nombre(g.grupo) }))
+  const meses = (s?.porMes ?? []).slice(-12)
+  return (
+    <section className="tarjeta">
+      <div className="tarjeta-cabecera">
+        <h2>Satisfacción de los asistentes</h2>
+        <div className="controles">
+          <select value={agrupar} onChange={(e) => setAgrupar(e.target.value)} aria-label="Agrupar satisfacción por">
+            <option value="tipo">Por tipo de evento</option><option value="facultad">Por facultad</option>
+            {esAdmin && <option value="organizador">Por organizador</option>}
+          </select>
+        </div>
+      </div>
+      <Aviso>{error}</Aviso>
+      {s && s.respuestas === 0 && <Vacio>Todavía no hay encuestas respondidas.</Vacio>}
+      {s && s.respuestas > 0 && (
+        <>
+          <div className="kpis">
+            <Kpi titulo="Satisfacción promedio" valor={`${puntaje(s.promedio)} / 5`} detalle={`${s.respuestas} respuestas`} />
+            <Kpi titulo="Lo recomendarían" valor={pct(s.porcentajeRecomienda)} detalle="de quienes respondieron" />
+            <Kpi titulo="Tasa de respuesta" valor={pct(s.tasaRespuesta)} detalle="de los asistentes a eventos finalizados" />
+          </div>
+          <div className="dos-columnas sin-margen">
+            <div>
+              <h3>Puntaje medio (1 a 5)</h3>
+              <ResponsiveContainer width="100%" height={grupos.length * 34 + 20}>
+                <BarChart data={grupos} layout="vertical" margin={{ right: 40 }}>
+                  <XAxis type="number" domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} {...ejeProps} />
+                  <YAxis type="category" dataKey="etiqueta" width={140} {...ejeProps} />
+                  <Tooltip content={<TooltipCaja formato={(v) => puntaje(v)} />} cursor={{ fill: 'rgba(11,11,11,0.04)' }} />
+                  <Bar dataKey="promedio" name="Satisfacción" fill={SERIES[2]} radius={[0, 4, 4, 0]} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+              <TablaDatos columnas={[{ k: 'etiqueta', t: 'Grupo' }, { k: 'eventos', t: 'Eventos', num: true },
+                { k: 'respuestas', t: 'Respuestas', num: true }, { k: 'promedio', t: 'Puntaje', num: true, f: (v) => puntaje(v) },
+                { k: 'porcentajeRecomienda', t: 'Recomienda', num: true, f: (v) => pct(v) }]} filas={grupos} />
+            </div>
+            <div>
+              <h3>Evolución mensual</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={meses}>
+                  <CartesianGrid {...grillaProps} />
+                  <XAxis dataKey="mes" {...ejeProps} tickFormatter={mesCorto} />
+                  <YAxis {...ejeProps} width={36} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
+                  <Tooltip content={<TooltipCaja formato={(v) => puntaje(v)} etiqueta={mesCorto} />} />
+                  <Line dataKey="promedio" name="Satisfacción" stroke={SERIES[2]} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <p className="nota">El puntaje de cada organizador en sus eventos anteriores es una variable del modelo predictivo:
+            sus próximos eventos se estiman con esa “reputación”.</p>
+        </>
+      )}
+    </section>
+  )
+}
+
 export default function Dashboard() {
-  const { esOrganizador } = useAuth()
+  const { esOrganizador, esAdmin } = useAuth()
   const proximos = useCarga(() => api.get('/api/predicciones/proximos'), [])
   const [agrupar, setAgrupar] = useState('tipo')
   const [metrica, setMetrica] = useState('tasa')
@@ -124,8 +187,8 @@ export default function Dashboard() {
                          content={<TooltipCaja etiqueta={(l, p) => `${p?.[0]?.payload.titulo} · ${fechaCorta(p?.[0]?.payload.fecha)}`}
                                                formato={(v, p) => (p.dataKey === 'estimada' ? `${v} (rango ${p.payload.rango})` : v)} />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="estimada" name="Asistencia estimada" fill={SERIES[0]} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="capacidad" name="Capacidad (aforo de sala)" fill={REFERENCIA} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="estimada" name="Asistencia estimada" fill={SERIES[0]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="capacidad" name="Capacidad (aforo de sala)" fill={REFERENCIA} radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
             <TablaDatos columnas={[
@@ -184,6 +247,9 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ---- Encuestas ---- */}
+      <Satisfaccion esAdmin={esAdmin} />
+
       {/* ---- Modelo ---- */}
       {m?.entrenado && (
         <section className="tarjeta">
@@ -203,6 +269,10 @@ export default function Dashboard() {
                 </table>
               </div>
               {elegido && <p className="nota">En promedio, la estimación se desvía ±{elegido.mae_asistentes} personas de la asistencia real.</p>}
+              {m.metricas.encuestas?.eventos_con_encuesta > 0 && (
+                <p className="nota">Retroalimentado con <b>{m.metricas.encuestas.respuestas}</b> respuestas de encuestas de
+                  satisfacción ({m.metricas.encuestas.eventos_con_encuesta} eventos; promedio por evento {puntaje(m.metricas.encuestas.satisfaccion_media)}/5).</p>
+              )}
             </div>
             <div>
               <h3>Variables más influyentes</h3>
@@ -211,7 +281,7 @@ export default function Dashboard() {
                   <XAxis type="number" hide domain={[0, 'dataMax']} />
                   <YAxis type="category" dataKey="nombre" width={150} {...ejeProps} />
                   <Tooltip content={<TooltipCaja formato={(v) => pct(v, 1)} />} cursor={{ fill: 'rgba(11,11,11,0.04)' }} />
-                  <Bar dataKey="importancia" name="Importancia" fill={SERIES[0]} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="importancia" name="Importancia" fill={SERIES[0]} radius={[0, 4, 4, 0]} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

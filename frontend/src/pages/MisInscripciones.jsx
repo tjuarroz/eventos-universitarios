@@ -7,6 +7,8 @@ import { TIPOS, fecha, hora, hoyIso } from '../util.js'
 
 export default function MisInscripciones() {
   const { datos, error, cargando } = useCarga(() => api.get('/api/inscripciones/mias'), [])
+  const pend = useCarga(() => api.get('/api/encuestas/pendientes'), [])
+  const conEncuesta = new Set((pend.datos || []).map((p) => p.inscripcionId))
   const [qr, setQr] = useState(null)
   if (cargando && !datos) return <Cargando />
 
@@ -44,7 +46,10 @@ export default function MisInscripciones() {
                 <tr key={i.id}>
                   <td>{i.eventoTitulo}</td><td>{fecha(i.fecha)}</td><td>{TIPOS[i.tipo]}</td>
                   <td><EstadoBadge estado={i.estadoEvento} /></td>
-                  <td>{i.asistio ? <span className="ok">✓ Asististe</span> : <span className="apagado">Sin registro</span>}</td>
+                  <td>
+                    {i.asistio ? <span className="ok">✓ Asististe</span> : <span className="apagado">Sin registro</span>}
+                    {conEncuesta.has(i.id) && <> · <Link to="/mis-encuestas">Responder encuesta</Link></>}
+                  </td>
                 </tr>
               ))}
             </tbody>

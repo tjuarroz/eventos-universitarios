@@ -92,7 +92,19 @@ CREATE TABLE predicciones (
 );
 CREATE INDEX idx_predicciones_evento ON predicciones(evento_id, generada_en DESC);
 
--- Vista usada para entrenar el modelo: un registro por evento finalizado
+-- Encuesta de satisfacción: la responde cada asistente una vez, cuando el evento se finaliza
+CREATE TABLE encuestas (
+    id              SERIAL PRIMARY KEY,
+    inscripcion_id  INT          NOT NULL UNIQUE REFERENCES inscripciones(id) ON DELETE CASCADE,
+    puntaje         SMALLINT     NOT NULL CHECK (puntaje BETWEEN 1 AND 5),   -- 1 = muy malo … 5 = excelente
+    recomendaria    BOOLEAN      NOT NULL,
+    comentario      VARCHAR(500),
+    respondida_en   TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+-- Vista usada para entrenar el modelo: un registro por evento finalizado.
+-- Las columnas de la encuesta (organizador, satisfacción y respuestas) van al final para poder
+-- actualizar la vista con CREATE OR REPLACE en bases ya creadas (ver db/migraciones).
 CREATE VIEW v_historico_eventos AS
 SELECT e.id                       AS evento_id,
        e.tipo,
@@ -103,10 +115,14 @@ SELECT e.id                       AS evento_id,
        e.clima,
        COALESCE(s.capacidad, e.capacidad) AS capacidad_sala,
        COUNT(i.id) FILTER (WHERE i.estado = 'ACTIVA') AS inscriptos,
-       COUNT(a.id)                                    AS asistentes
+       COUNT(a.id)                                    AS asistentes,
+       e.organizador_id,
+       ROUND(AVG(en.puntaje), 2)                      AS satisfaccion,   -- NULL si nadie respondió
+       COUNT(en.id)                                   AS respuestas
 FROM eventos e
 LEFT JOIN salas s          ON s.id = e.sala_id
 LEFT JOIN inscripciones i  ON i.evento_id = e.id
 LEFT JOIN asistencias a    ON a.inscripcion_id = i.id
+LEFT JOIN encuestas en     ON en.inscripcion_id = i.id
 WHERE e.estado = 'FINALIZADO'
 GROUP BY e.id, s.capacidad;

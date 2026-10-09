@@ -4,6 +4,11 @@ Genera db/init/02_datos_demo.sql con datos sintéticos pero realistas:
   - salas de distintas facultades
   - ~220 eventos FINALIZADOS en los últimos 18 meses (con inscripciones y asistencia real)
   - eventos PUBLICADOS y BORRADOR a futuro
+  - encuestas de satisfacción de los asistentes de eventos finalizados
+
+Cada organizador tiene una "calidad" propia: sus eventos gustan más o menos (puntaje de la encuesta)
+y, como la gente se entera, a los eventos de los organizadores mejor valorados asiste más gente.
+La sala desbordada y los eventos muy largos bajan la satisfacción.
 
 Las fechas se escriben relativas al lunes de la semana actual (función lunes_actual()),
 así la demo siempre tiene historial pasado y eventos próximos sin importar cuándo se levante,
@@ -76,6 +81,23 @@ APELLIDOS = ["González", "Rodríguez", "Gómez", "Fernández", "López", "Díaz
              "Castro", "Ortiz", "Silva", "Núñez", "Luna", "Juárez", "Cabrera", "Ríos", "Morales"]
 
 HORAS = [9, 10, 11, 14, 16, 18, 19]
+
+# ---------- encuestas de satisfacción ----------
+# Calidad de cada organizador (id de usuario): suma o resta al puntaje medio de sus eventos
+CALIDAD_ORG = {2: 0.45, 3: 0.0, 4: -0.55, 5: 0.2}
+SATISF_TIPO = {"CHARLA": 3.9, "SEMINARIO": 4.0, "TALLER": 4.3, "JORNADA": 3.7, "INSTITUCIONAL": 3.5}
+TASA_RESPUESTA = 0.55          # proporción de asistentes que contesta la encuesta
+TASA_RESPUESTA_RECIENTE = 0.3  # eventos de las últimas 4 semanas: la encuesta sigue abierta
+COMENTARIOS = {
+    5: ["Excelente, muy claro y bien organizado.", "Me encantó, ojalá haya más actividades así.",
+        "Muy buena propuesta, el expositor domina el tema."],
+    4: ["Muy bueno, aprendí cosas útiles.", "Buen evento, solo faltó un poco más de tiempo para preguntas.",
+        "Bien organizado y puntual."],
+    3: ["Estuvo bien, aunque algo largo.", "Interesante pero muy teórico.", "Correcto, sin más."],
+    2: ["La sala quedó chica y no se escuchaba bien.", "Empezó tarde y se extendió demasiado.",
+        "Esperaba más contenido práctico."],
+    1: ["Muy desorganizado.", "No había lugar para sentarse y no se veía la presentación."],
+}
 MES_ESTACIONALIDAD = {1: 0.35, 2: 0.45, 3: 1.05, 4: 1.1, 5: 1.1, 6: 1.0, 7: 0.6,
                       8: 1.05, 9: 1.1, 10: 1.1, 11: 0.95, 12: 0.7}
 PROB_LLUVIA = {1: .25, 2: .25, 3: .28, 4: .25, 5: .2, 6: .18, 7: .18, 8: .18, 9: .22, 10: .28, 11: .28, 12: .25}
@@ -154,6 +176,7 @@ def main():
         return random.choice(candidatas)
 
     eventos, inscripciones, asistencias = [], [], []
+    para_encuesta = []
     eid, iid = 1, 1
 
     def crear_evento(offset, estado, historico):
@@ -193,6 +216,8 @@ def main():
             titulo += f" {d.year}"
         desc = f"{tipo.capitalize()} organizada por la Facultad de {fac}. Actividad abierta a estudiantes, docentes y personal."
         org = random.choice([2, 3, 4, 5])
+        # los organizadores mejor valorados atraen asistentes más comprometidos
+        t = min(0.98, max(0.15, t + 0.12 * CALIDAD_ORG[org]))
         h_ini = f"{hora:02d}:00"
         fin_min = hora * 60 + dur
         h_fin = f"{fin_min // 60:02d}:{fin_min % 60:02d}"
@@ -204,7 +229,10 @@ def main():
                        f"{q(tipo)},{q(fac)},lunes_actual() + {offset},{q(h_ini)},{q(h_fin)},{sala_id},{cupo},"
                        f"{q(clima)},{q(estado)},{org})")
         elegidos = random.sample(asistentes_ids, inscriptos)
+        if historico and offset > -14 and 7 not in elegidos:
+            elegidos[0] = 7  # estudiante@ asistió a los eventos de las últimas 2 semanas (encuestas pendientes)
         n_asist = round(inscriptos * t) if historico else 0
+        presentes = []
         for k, uid in enumerate(elegidos):
             dias_antes = random.randint(1, 25)
             inscripciones.append(f"({iid},{eid},{uid},{q(codigo())},'ACTIVA',"
@@ -212,7 +240,11 @@ def main():
             if k < n_asist:
                 metodo = random.choices(["QR", "CODIGO", "LISTA"], [0.6, 0.15, 0.25])[0]
                 asistencias.append(f"({iid},{q(metodo)},6,(lunes_actual() + {offset})::timestamp + time {q(h_ini)})")
+                presentes.append((iid, uid))
             iid += 1
+        if historico:
+            para_encuesta.append({"offset": offset, "org": org, "tipo": tipo, "dur": dur, "fin_min": fin_min,
+                                  "sobrecupo": n_asist > sala[3], "presentes": presentes})
         eid += 1
 
     # Historial: ~220 eventos en los últimos ~18 meses (hasta la semana pasada)
@@ -239,13 +271,36 @@ def main():
     lotes("inscripciones", "id, evento_id, usuario_id, codigo, estado, fecha_inscripcion", inscripciones)
     lotes("asistencias", "inscripcion_id, metodo, registrada_por, registrada_en", asistencias)
 
-    for t in ("roles", "usuarios", "salas", "eventos", "inscripciones", "asistencias"):
+    # ---------- encuestas (con un generador aparte para no alterar el resto de los datos) ----------
+    rnd = random.Random(77)
+    encuestas = []
+    for ev in para_encuesta:
+        reciente = ev["offset"] > -28
+        media = SATISF_TIPO[ev["tipo"]] + CALIDAD_ORG[ev["org"]]
+        media -= 0.7 if ev["sobrecupo"] else 0.0
+        media -= 0.25 if ev["dur"] >= 240 else 0.0
+        media += rnd.gauss(0, 0.2)  # cada evento tiene su propia "suerte"
+        for ins_id, uid in ev["presentes"]:
+            if uid == 7 and reciente:
+                continue  # estudiante@ deja pendientes sus encuestas recientes (para la demo)
+            if rnd.random() > (TASA_RESPUESTA_RECIENTE if reciente else TASA_RESPUESTA):
+                continue
+            puntaje = min(5, max(1, round(rnd.gauss(media, 0.75))))
+            recomendaria = puntaje >= 4 if rnd.random() < 0.9 else puntaje >= 3
+            comentario = rnd.choice(COMENTARIOS[puntaje]) if rnd.random() < 0.25 else None
+            dias = rnd.randint(0, min(6, -ev["offset"] - 1))
+            hora = rnd.randint(ev["fin_min"] // 60, 23) if dias == 0 else rnd.randint(8, 23)
+            encuestas.append(f"({ins_id},{puntaje},{'TRUE' if recomendaria else 'FALSE'},{q(comentario)},"
+                             f"(lunes_actual() + {ev['offset'] + dias})::timestamp + interval '{hora} hours')")
+    lotes("encuestas", "inscripcion_id, puntaje, recomendaria, comentario, respondida_en", encuestas)
+
+    for t in ("roles", "usuarios", "salas", "eventos", "inscripciones", "asistencias", "encuestas"):
         w(f"SELECT setval(pg_get_serial_sequence('{t}','id'), (SELECT MAX(id) FROM {t}));")
 
     dest = Path(__file__).resolve().parent.parent / "db" / "init" / "02_datos_demo.sql"
     dest.write_text("\n".join(out), encoding="utf-8")
     print(f"{dest.name}: {len(usuarios)} usuarios, {len(eventos)} eventos, "
-          f"{len(inscripciones)} inscripciones, {len(asistencias)} asistencias")
+          f"{len(inscripciones)} inscripciones, {len(asistencias)} asistencias, {len(encuestas)} encuestas")
 
 
 if __name__ == "__main__":

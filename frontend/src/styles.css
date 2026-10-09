@@ -247,3 +247,25 @@ textarea { resize: vertical; }
 .leyenda span { display: inline-flex; align-items: center; gap: 6px; }
 .leyenda i { width: 16px; height: 2px; display: inline-block; }
 .leyenda i.punteada { background: repeating-linear-gradient(90deg, var(--tinta-3) 0 4px, transparent 4px 7px) !important; }
+
+/* ---------- Encuestas de satisfacción ---------- */
+.menu-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--alerta); color: #fff; font-size: 0.7rem; font-weight: 700; line-height: 1; }
+.encuesta { display: flex; flex-direction: column; gap: 14px; }
+.encuesta-pregunta { font-weight: 600; font-size: 0.9rem; color: var(--tinta-2); margin: 0 0 6px; }
+.estrellas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; max-width: 440px; }
+.estrella { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 8px 6px; border: 1px solid var(--borde-fuerte); border-radius: 8px; background: var(--superficie); font: inherit; cursor: pointer; color: var(--tinta-2); }
+.estrella b { font-size: 1.25rem; color: var(--tinta-3); }
+.estrella span { font-size: 0.72rem; white-space: nowrap; }
+.estrella:hover { border-color: var(--pri); }
+.estrella.activa { border-color: var(--pri); background: var(--pri-suave); color: var(--pri); }
+.estrella.activa b { color: #eda100; }
+.opciones-si-no { display: flex; gap: 8px; }
+.opciones-si-no .chip.activa { border-color: var(--pri); background: var(--pri-suave); color: var(--pri); font-weight: 600; }
+.encuesta textarea { width: 100%; min-height: 70px; resize: vertical; }
+.distribucion { display: flex; flex-direction: column; gap: 6px; }
+.distribucion-fila { display: grid; grid-template-columns: 92px 1fr 70px; align-items: center; gap: 10px; font-size: 0.85rem; }
+.distribucion-fila .num { text-align: right; color: var(--tinta-2); }
+.comentarios { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow: auto; }
+.comentarios li { background: var(--fondo); border-radius: 8px; padding: 9px 12px; font-size: 0.88rem; }
+.grilla-ancha { grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.tarjeta-acciones .nota { margin: 0; }

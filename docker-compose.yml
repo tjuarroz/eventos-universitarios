@@ -56,6 +56,17 @@ services:
     ports:
       - "3000:80"
 
+  # Simulador de uso real (no arranca con "up"; se ejecuta a pedido):
+  #   docker compose run --rm simulador
+  simulador:
+    build: ./analitica-python
+    profiles: ["simulador"]
+    volumes:
+      - ./tools:/tools:ro
+    depends_on:
+      - core
+    command: ["python", "/tools/simular_uso.py", "--api", "http://core:8080"]
+
 volumes:
   pgdata:
   modelos:

@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,12 +96,17 @@ public class PanelService {
     public List<RegistroHistorico> historico() {
         return jdbc.query("""
                 SELECT evento_id, tipo, facultad, fecha, to_char(hora_inicio, 'HH24:MI') AS hora_inicio,
-                       duracion_min::int AS duracion_min, clima, capacidad_sala, inscriptos, asistentes
+                       duracion_min::int AS duracion_min, clima, capacidad_sala, inscriptos, asistentes,
+                       organizador_id, satisfaccion, respuestas
                 FROM v_historico_eventos ORDER BY fecha
-                """, (rs, n) -> new RegistroHistorico(
-                rs.getInt("evento_id"), rs.getString("tipo"), rs.getString("facultad"),
-                rs.getDate("fecha").toLocalDate(), rs.getString("hora_inicio"), rs.getInt("duracion_min"),
-                rs.getString("clima"), rs.getInt("capacidad_sala"), rs.getLong("inscriptos"),
-                rs.getLong("asistentes")));
+                """, (rs, n) -> {
+            BigDecimal satisf = rs.getBigDecimal("satisfaccion");
+            return new RegistroHistorico(
+                    rs.getInt("evento_id"), rs.getString("tipo"), rs.getString("facultad"),
+                    rs.getDate("fecha").toLocalDate(), rs.getString("hora_inicio"), rs.getInt("duracion_min"),
+                    rs.getString("clima"), rs.getInt("capacidad_sala"), rs.getLong("inscriptos"),
+                    rs.getLong("asistentes"), rs.getInt("organizador_id"),
+                    satisf == null ? null : satisf.doubleValue(), rs.getLong("respuestas"));
+        });
     }
 }

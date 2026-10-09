@@ -19,7 +19,12 @@ def cargar() -> None:
     global _modelo
     if _ARCHIVO.exists():
         try:
-            _modelo = joblib.load(_ARCHIVO)
+            m = joblib.load(_ARCHIVO)
+            if "satisfaccion_media" not in vars(m):
+                # modelo guardado por una versión anterior (sin encuestas): se descarta y el core reentrena
+                log.info("Modelo guardado de una versión anterior; se reentrenará con las encuestas")
+                return
+            _modelo = m
             log.info("Modelo cargado desde %s (%s registros)", _ARCHIVO, len(_modelo.historico))
         except Exception as e:  # archivo corrupto o de otra versión: se reentrena luego
             log.warning("No se pudo cargar el modelo guardado: %s", e)

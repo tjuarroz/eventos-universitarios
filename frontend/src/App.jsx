@@ -6,6 +6,7 @@ import Registro from './pages/Registro.jsx'
 import Eventos from './pages/Eventos.jsx'
 import EventoDetalle from './pages/EventoDetalle.jsx'
 import MisInscripciones from './pages/MisInscripciones.jsx'
+import MisEncuestas from './pages/MisEncuestas.jsx'
 import PanelOrganizador from './pages/PanelOrganizador.jsx'
 import EventoForm from './pages/EventoForm.jsx'
 import Asistencia from './pages/Asistencia.jsx'
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/eventos" element={<Eventos />} />
         <Route path="/eventos/:id" element={<EventoDetalle />} />
         <Route path="/mis-inscripciones" element={<MisInscripciones />} />
+        <Route path="/mis-encuestas" element={<MisEncuestas />} />
         <Route path="/organizador" element={<Protegida requiere="esStaff"><PanelOrganizador /></Protegida>} />
         <Route path="/organizador/eventos/nuevo" element={<Protegida requiere="esOrganizador"><EventoForm /></Protegida>} />
         <Route path="/organizador/eventos/:id/editar" element={<Protegida requiere="esOrganizador"><EventoForm /></Protegida>} />
