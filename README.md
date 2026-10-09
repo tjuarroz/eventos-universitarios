@@ -57,6 +57,31 @@ cd core-java && mvn spring-boot:run
 cd frontend && npm install && npm run dev      # http://localhost:5173
 ```
 
+## Generar datos de uso real (simulador)
+
+Con el sistema levantado, en otra terminal:
+
+```bash
+docker compose run --rm simulador
+```
+
+El simulador usa la API como lo harían las personas:
+
+1. Registra usuarios nuevos y el administrador da de alta una sala.
+2. Los organizadores crean y publican eventos próximos, con aciertos y errores al elegir sala.
+3. Estudiantes, docentes y personal se inscriben, y algunos cancelan.
+4. En los eventos de hoy, apoyo@ registra la asistencia por QR, código o lista y los eventos se finalizan.
+5. Se reentrena el modelo y se generan las predicciones.
+
+Opciones:
+- `--futuros 20 --hoy 6 --nuevos 40`: cambiar las cantidades.
+- `--llenar <id> --cantidad 50`: solo suma inscriptos a un evento.
+- `--cierres 3`: solo emula el cierre de 3 eventos de hoy (asistencia, finalización y encuestas) y reentrena el modelo. `--tasa-respuesta 0.7` cambia cuántos asistentes responden; `estudiante@` asiste pero deja su encuesta pendiente para responderla en vivo (`--pendiente ""` lo desactiva).
+
+Para pasarlas: `docker compose run --rm simulador python /tools/simular_uso.py --api http://core:8080 <opciones>`.
+
+La guía completa de uso está en `docs/Guia_de_uso_y_demostracion.docx`.
+
 ## Usuarios de prueba
 
 La contraseña de todos es `demo1234`. En la pantalla de login hay botones para completarlos.
@@ -74,7 +99,8 @@ La contraseña de todos es `demo1234`. En la pantalla de login hay botones para 
 2. **Inscripción:** listado con filtros por fecha, tipo, facultad y texto. La inscripción genera un código único que el usuario ve como QR. Se valida el cupo.
 3. **Registro de asistencia:** por lista (checkbox), código tipeado o **QR escaneado con la cámara**. Es idempotente.
 4. **Panel del organizador:** muestra inscriptos, asistentes, estado, historial, indicadores, estadísticas por evento y acceso a las predicciones.
-5. **Módulo predictivo (Python):** calcula la asistencia estimada con un intervalo del 80 %, la probabilidad de sobrecapacidad y la de baja asistencia, recomienda sala según el aforo y muestra tendencias por tipo y por facultad con pronóstico.
+5. **Encuesta de satisfacción:** al finalizar un evento, cada asistente ve en la app (aviso + sección *Encuestas*) una encuesta de 1 a 5 estrellas, si lo recomendaría y un comentario opcional. Queda abierta 30 días y se responde una sola vez. El organizador ve los resultados en las estadísticas del evento y el dashboard muestra la satisfacción por tipo, facultad u organizador.
+6. **Módulo predictivo (Python):** calcula la asistencia estimada con un intervalo del 80 %, la probabilidad de sobrecapacidad y la de baja asistencia, recomienda sala según el aforo y muestra tendencias por tipo y por facultad con pronóstico.
 
 ## Módulo predictivo (resumen)
 
@@ -82,20 +108,32 @@ La contraseña de todos es `demo1234`. En la pantalla de login hay botones para 
 - **Modelo de inscriptos (Random Forest):** proyecta los inscriptos al cierre de la inscripción cuando el evento todavía está lejos.
 - **Modelo de tasa de asistencia:** se comparan una **regresión Ridge** y un **Random Forest** con validación cruzada de 5 folds, y se queda el de menor error medio absoluto. También se reporta una línea base (promedio por tipo).
 - **Incertidumbre:** se usa una aproximación normal con el error de validación cruzada más la dispersión entre árboles. Con eso se calculan el intervalo del 80 %, `P(asistentes > aforo)` y `P(asistentes < 40 % del aforo)`.
+- **Retroalimentación con encuestas:** cada evento lleva como variable la *satisfacción previa* de su organizador (puntaje medio de sus eventos anteriores, suavizado hacia el promedio general). Sólo se usan eventos con fecha anterior, para no "espiar" el resultado. Con los datos de demo, el error medio baja de ~4,5 a ~4,3 personas y el error en la tasa de asistencia cae un 8 %.
 - **Sala recomendada:** la más chica, de la facultad o de uso general, que cubra el escenario alto (percentil 90).
 - **Series temporales:** media móvil de 3 meses por grupo y pronóstico a 3 meses con suavizado exponencial de **Holt**.
+
+## Actualizar una base existente (encuestas)
+
+Si ya tenías el sistema levantado de antes, hay dos opciones:
+
+- **Recrear la base con los datos de demo nuevos (incluyen 3.000 respuestas de encuestas):** `docker compose down -v && docker compose up --build -d`
+- **Conservar tus datos:** aplicar la migración y reconstruir:
+  - cmd: `docker compose exec -T db psql -U eventos -d eventos < db\migraciones\2026-10_encuestas.sql`
+  - PowerShell: `Get-Content db\migraciones\2026-10_encuestas.sql | docker compose exec -T db psql -U eventos -d eventos`
+  - y después `docker compose up --build -d`
 
 ## Pruebas
 
 ```bash
-cd analitica-python && pytest -q        # 7 pruebas: seguridad, predicción, lluvia, sala, lote, tendencias
+cd analitica-python && pytest -q        # 10 pruebas: seguridad, predicción, lluvia, sala, lote, tendencias, encuestas
 cd core-java && mvn test                # pruebas de JwtService
 ```
 
 ## Estructura
 
 ```
-db/init/             01_esquema.sql (7 tablas + vista) · 02_datos_demo.sql (generado)
+db/init/             01_esquema.sql (8 tablas + vista) · 02_datos_demo.sql (generado)
+db/migraciones/      scripts para actualizar bases ya creadas
 tools/               generar_datos_demo.py (regenera los datos de demo)
 core-java/           Spring Boot: domain, repository, service, web, security, dto, exception
 analitica-python/    FastAPI: modelo.py, tendencias.py, main.py, seguridad.py, tests/

@@ -8,6 +8,11 @@ Se entrenan dos modelos sobre el histórico de eventos finalizados:
 2. Modelo de TASA DE ASISTENCIA (asistentes / inscriptos). Se comparan por validación cruzada
    una regresión lineal regularizada (Ridge) y un Random Forest, y se queda el de menor error.
 
+Retroalimentación con la encuesta de satisfacción: cada evento lleva como variable la
+"satisfacción previa" de su organizador, es decir, el puntaje medio (1 a 5) que dieron los
+asistentes a sus eventos ANTERIORES. Sólo se usan eventos con fecha anterior, para no "espiar"
+el resultado del propio evento, y se suaviza hacia el promedio general cuando hay pocos datos.
+
 Asistencia estimada = inscriptos proyectados × tasa estimada.
 La incertidumbre se modela como normal (desvío = error residual de validación cruzada
 + dispersión entre árboles del bosque), y de ahí salen el intervalo del 80 %,
@@ -33,15 +38,18 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from .config import UMBRAL_BAJA_ASISTENCIA
 
 CATEGORICAS = ["tipo", "facultad", "clima"]
-NUMERICAS_BASE = ["hora", "dia_semana", "mes", "duracion_min", "capacidad_sala"]
+NUMERICAS_BASE = ["hora", "dia_semana", "mes", "duracion_min", "capacidad_sala", "satisfaccion_previa"]
 NUMERICAS_TASA = NUMERICAS_BASE + ["inscriptos"]
 ZONA = ZoneInfo("America/Argentina/Buenos_Aires")
 Z80 = 1.2816  # cuantil normal para intervalo central del 80 %
+SATISF_DEFECTO = 4.0  # puntaje supuesto cuando todavía no hay ninguna encuesta respondida
+SUAVIZADO = 3        # "eventos ficticios" con el promedio general que se suman al del organizador
 
 NOMBRES_VARIABLES = {
     "tipo": "Tipo de evento", "facultad": "Facultad", "clima": "Clima", "hora": "Horario",
     "dia_semana": "Día de la semana", "mes": "Mes", "duracion_min": "Duración",
     "capacidad_sala": "Capacidad de la sala", "inscriptos": "Inscriptos",
+    "satisfaccion_previa": "Satisfacción previa",
 }
 PLURAL = {"CHARLA": "charlas", "SEMINARIO": "seminarios", "TALLER": "talleres", "JORNADA": "jornadas",
           "INSTITUCIONAL": "eventos institucionales"}
@@ -65,6 +73,39 @@ def preparar(df: pd.DataFrame) -> pd.DataFrame:
     if "capacidad_sala" in d:
         d["capacidad_sala"] = d["capacidad_sala"].astype(float)
     return d
+
+
+def satisfaccion_media(historico: pd.DataFrame) -> float:
+    """Puntaje medio de todos los eventos con encuesta (o el valor por defecto si no hay)."""
+    if "satisfaccion" not in historico:
+        return SATISF_DEFECTO
+    s = pd.to_numeric(historico["satisfaccion"], errors="coerce").dropna()
+    return float(s.mean()) if len(s) else SATISF_DEFECTO
+
+
+def satisfaccion_previa(historico: pd.DataFrame, organizador_id, antes_de, media: float) -> tuple[float, int]:
+    """Satisfacción de los eventos del organizador anteriores a `antes_de`, suavizada hacia `media`.
+
+    Devuelve (valor, cantidad de eventos con encuesta usados)."""
+    if organizador_id is None or pd.isna(organizador_id) or "organizador_id" not in historico:
+        return media, 0
+    h = historico
+    previos = pd.to_numeric(h.loc[(h["organizador_id"] == organizador_id) & (h["fecha"] < pd.Timestamp(antes_de)),
+                                  "satisfaccion"], errors="coerce").dropna()
+    n = len(previos)
+    return (float(previos.sum()) + SUAVIZADO * media) / (n + SUAVIZADO), n
+
+
+def agregar_satisfaccion_previa(df: pd.DataFrame) -> tuple[pd.DataFrame, float]:
+    """Agrega la columna satisfaccion_previa a cada registro del histórico (sin fuga de datos)."""
+    d = df.copy()
+    for col in ("organizador_id", "satisfaccion"):
+        if col not in d:
+            d[col] = np.nan
+    media = satisfaccion_media(d)
+    d["satisfaccion_previa"] = [satisfaccion_previa(d, r.organizador_id, r.fecha, media)[0]
+                                for r in d.itertuples()]
+    return d, media
 
 
 def _pipeline(estimador, numericas, escalar: bool) -> Pipeline:
@@ -91,6 +132,7 @@ class ModeloAsistencia:
     historico: pd.DataFrame
     metricas: dict
     importancias: list[dict]
+    satisfaccion_media: float = SATISF_DEFECTO
     entrenado_en: str = field(default_factory=lambda: datetime.now(ZONA).isoformat(timespec="seconds"))
 
     # ------------------------------------------------------------------ entrenamiento
@@ -98,6 +140,7 @@ class ModeloAsistencia:
     def entrenar(cls, registros: list[dict]) -> "ModeloAsistencia":
         df = preparar(pd.DataFrame(registros))
         df = df[df["inscriptos"] > 0].reset_index(drop=True)
+        df, media_satisf = agregar_satisfaccion_previa(df)
         df["tasa"] = (df["asistentes"] / df["inscriptos"]).clip(0, 1)
         n = len(df)
         kf = KFold(n_splits=min(5, n), shuffle=True, random_state=42)
@@ -142,10 +185,18 @@ class ModeloAsistencia:
 
         metricas["modelo_elegido"] = elegido
         metricas["registros"] = n
+        con_encuesta = df["satisfaccion"].notna()
+        metricas["encuestas"] = {
+            "eventos_con_encuesta": int(con_encuesta.sum()),
+            "respuestas": int(pd.to_numeric(df["respuestas"], errors="coerce").fillna(0).sum())
+                          if "respuestas" in df else 0,
+            "satisfaccion_media": round(media_satisf, 2),
+        }
         return cls(
             modelo_tasa=modelo_tasa, nombre_modelo_tasa=elegido, sigma_tasa=sigma_tasa,
             modelo_inscriptos=modelo_insc, sigma_inscriptos_rel=sigma_insc_rel,
             historico=df, metricas=metricas, importancias=cls._importancias(modelo_tasa, elegido),
+            satisfaccion_media=media_satisf,
         )
 
     @staticmethod
@@ -171,7 +222,9 @@ class ModeloAsistencia:
     def predecir(self, ev: dict, salas: list[dict], hoy: date | None = None) -> dict:
         hoy = hoy or datetime.now(ZONA).date()
         cap_ref = ev.get("capacidad_sala") or ev["cupo"]
-        fila = preparar(pd.DataFrame([{**ev, "capacidad_sala": cap_ref}]))
+        satisf, n_satisf = satisfaccion_previa(self.historico, ev.get("organizador_id"), ev["fecha"],
+                                               self.satisfaccion_media)
+        fila = preparar(pd.DataFrame([{**ev, "capacidad_sala": cap_ref, "satisfaccion_previa": satisf}]))
         insc_act = int(ev["inscriptos"])
 
         # 1) Inscriptos proyectados al cierre: se combina lo real con el modelo según la anticipación
@@ -231,10 +284,13 @@ class ModeloAsistencia:
                                   "ocupacion_estimada": round(mu / rec["capacidad"], 4)} if rec else None),
             "sala_actual_adecuada": sala_ok,
             "modelo": self.nombre_modelo_tasa,
-            "explicacion": self._explicar(ev, fila.iloc[0], insc_act, insc_proy, dias, tasa, mu, sd, cap_ref, rec, sala_ok),
+            "satisfaccion_previa": round(satisf, 2),
+            "explicacion": self._explicar(ev, fila.iloc[0], insc_act, insc_proy, dias, tasa, mu, sd, cap_ref, rec,
+                                          sala_ok, satisf, n_satisf),
         }
 
-    def _explicar(self, ev, fila, insc_act, insc_proy, dias, tasa, mu, sd, cap, rec, sala_ok) -> list[str]:
+    def _explicar(self, ev, fila, insc_act, insc_proy, dias, tasa, mu, sd, cap, rec, sala_ok,
+                  satisf=None, n_satisf=0) -> list[str]:
         h = self.historico
         msgs = []
         if dias > 0 and round(insc_proy) > insc_act:
@@ -250,6 +306,18 @@ class ModeloAsistencia:
             ll, ot = h[h["clima"] == "LLUVIA"]["tasa"], h[h["clima"] != "LLUVIA"]["tasa"]
             if len(ll) and len(ot):
                 msgs.append(f"Con lluvia la asistencia histórica cae ~{(ot.mean() - ll.mean()) * 100:.0f} puntos.")
+        if n_satisf:
+            media = self.satisfaccion_media
+            if satisf >= media + 0.1:
+                efecto = "suele asistir más gente"
+            elif satisf <= media - 0.1:
+                efecto = "suele asistir menos gente"
+            else:
+                efecto = "en línea con el promedio"
+            def coma(x):
+                return f"{x:.1f}".replace(".", ",")
+            msgs.append(f"Encuestas: los {n_satisf} eventos anteriores de este organizador tienen una satisfacción "
+                        f"de {coma(satisf)}/5 (promedio general {coma(media)}/5): {efecto}.")
         dia = int(fila["dia_semana"])
         por_dia = h.groupby("dia_semana")["tasa"].mean()
         if dia in por_dia and por_dia[dia] < h["tasa"].mean() - 0.03:
@@ -275,4 +343,5 @@ class ModeloAsistencia:
             "modelo_elegido": self.nombre_modelo_tasa,
             "metricas": self.metricas,
             "importancias": self.importancias,
+            "satisfaccion_media": round(self.satisfaccion_media, 2),
         }

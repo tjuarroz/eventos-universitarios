@@ -32,3 +32,7 @@ export const mesCorto = (periodo) => {
   const [y, m] = periodo.split('-').map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
 }
+
+// Encuesta de satisfacción
+export const PUNTAJES = { 1: 'Muy malo', 2: 'Malo', 3: 'Regular', 4: 'Bueno', 5: 'Excelente' }
+export const puntaje = (v) => (v === null || v === undefined ? '—' : v.toFixed(1).replace('.', ','))

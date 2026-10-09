@@ -19,6 +19,10 @@ class RegistroHistorico(BaseModel):
     capacidad_sala: int = Field(gt=0)
     inscriptos: int = Field(ge=0)
     asistentes: int = Field(ge=0)
+    # Encuesta de satisfacción (opcionales: los datos viejos pueden no tenerlos)
+    organizador_id: Optional[int] = None
+    satisfaccion: Optional[float] = Field(None, ge=1, le=5)  # puntaje medio 1-5; None si nadie respondió
+    respuestas: int = Field(0, ge=0)
 
 
 class EntrenarRequest(BaseModel):
@@ -37,6 +41,7 @@ class EventoAPredecir(BaseModel):
     cupo: int = Field(gt=0)
     capacidad_sala: Optional[int] = None
     sala_id: Optional[int] = None
+    organizador_id: Optional[int] = None
 
 
 class SalaInfo(BaseModel):
@@ -79,6 +84,7 @@ class PrediccionResponse(BaseModel):
     sala_recomendada: Optional[SalaRecomendada]
     sala_actual_adecuada: Optional[bool]
     modelo: str
+    satisfaccion_previa: Optional[float] = None
     explicacion: list[str]
 
 

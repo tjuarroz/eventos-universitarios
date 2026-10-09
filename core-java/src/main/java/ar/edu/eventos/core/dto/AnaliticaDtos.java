@@ -11,10 +11,15 @@ import java.util.List;
 public final class AnaliticaDtos {
     private AnaliticaDtos() {}
 
+    /**
+     * Un evento finalizado del histórico. {@code satisfaccion} es el puntaje medio (1 a 5) de su encuesta
+     * ({@code null} si nadie respondió); el modelo lo usa como "satisfacción previa" del organizador.
+     */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record RegistroHistorico(Integer eventoId, String tipo, String facultad, LocalDate fecha, String horaInicio,
                                     int duracionMin, String clima, int capacidadSala, long inscriptos,
-                                    long asistentes) {}
+                                    long asistentes, Integer organizadorId, Double satisfaccion,
+                                    long respuestas) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record EntrenarRequest(List<RegistroHistorico> registros) {}
@@ -22,7 +27,7 @@ public final class AnaliticaDtos {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record EventoAPredecir(Integer eventoId, String tipo, String facultad, LocalDate fecha, String horaInicio,
                                   int duracionMin, String clima, long inscriptos, int cupo, Integer capacidadSala,
-                                  Integer salaId) {}
+                                  Integer salaId, Integer organizadorId) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record SalaInfo(Integer id, String nombre, int capacidad, String facultad) {}

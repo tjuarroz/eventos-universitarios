@@ -115,7 +115,8 @@ public class PrediccionService {
         Sala s = e.getSala();
         return new EventoAPredecir(e.getId(), e.getTipo().name(), e.getFacultad(), e.getFecha(),
                 e.getHoraInicio().toString(), e.getDuracionMinutos(), e.getClima().name(), inscriptos,
-                e.getCapacidad(), s == null ? null : s.getCapacidad(), s == null ? null : s.getId());
+                e.getCapacidad(), s == null ? null : s.getCapacidad(), s == null ? null : s.getId(),
+                e.getOrganizador() == null ? null : e.getOrganizador().getId());
     }
 
     private List<SalaInfo> salasInfo() {

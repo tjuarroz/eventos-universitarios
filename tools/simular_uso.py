@@ -10,6 +10,7 @@ Hace lo que pasaría en unas semanas de uso:
      algunos cancelan.
   4. Eventos de HOY: se crean, se llenan de inscriptos, el personal de apoyo registra la asistencia
      (QR, código o lista) y el organizador los finaliza. Pasan a formar parte del historial.
+     Al finalizar, a los asistentes les aparece la encuesta de satisfacción y una parte la responde.
   5. Analítica: se reentrena el modelo con el historial nuevo y se generan las predicciones de todos
      los eventos próximos.
 
@@ -22,6 +23,7 @@ Desde tu máquina, con Python 3.10+ y el sistema levantado:
     python tools/simular_uso.py --api http://localhost:8080
 
 Opciones:  --futuros 12  --hoy 4  --nuevos 25  --semilla 7   (python tools/simular_uso.py -h)
+           --cierres 3 --tasa-respuesta 0.7   (sólo emula el cierre de 3 eventos de hoy con sus encuestas)
            --llenar 180 --cantidad 50   (sólo inscribe 50 personas al evento 180)
 """
 from __future__ import annotations
@@ -180,7 +182,7 @@ def crear_evento(api: Api, salas: list[dict], fecha: date, hora_ini: int, minuto
     fac = random.choice(FACULTADES)
     org = random.choice(ORGANIZADORES)
     cupo = int(esperados * random.uniform(1.1, 1.5)) // 5 * 5 + 5
-    candidatas = [s for s in salas if s["facultad"] in (None, fac)] or salas
+    candidatas = [s for s in salas if s.get("facultad") in (None, fac)] or salas
     # como en la vida real: a veces la sala se elige bien y a veces "la que haya"
     if random.random() < sala_correcta:
         aptas = sorted([s for s in candidatas if s["capacidad"] >= esperados * tasa], key=lambda s: s["capacidad"])
@@ -250,8 +252,39 @@ def fase_planificacion(api: Api, salas, gente, cantidad: int) -> list[dict]:
     return eventos
 
 
-def fase_hoy(api: Api, salas, gente, cantidad: int) -> list[dict]:
-    titulo("3. Eventos de hoy: inscripción, asistencia y cierre")
+# Encuesta de satisfacción: cada organizador tiene su "calidad" (igual que en generar_datos_demo.py)
+CALIDAD_ORG = {"organizador@uni.edu.ar": 0.45, "dferrari@uni.edu.ar": 0.0,
+               "mquiroga@uni.edu.ar": -0.55, "piglesias@uni.edu.ar": 0.2}
+SATISF_TIPO = {"CHARLA": 3.9, "SEMINARIO": 4.0, "TALLER": 4.3, "JORNADA": 3.7, "INSTITUCIONAL": 3.5}
+COMENTARIOS = {5: "Excelente, muy bien organizado.", 4: "Muy bueno, aprendí cosas útiles.",
+               3: "Estuvo bien, aunque algo largo.", 2: "La sala quedó chica y no se escuchaba bien.",
+               1: "Muy desorganizado."}
+
+
+def responder_encuestas(api: Api, ev: dict, presentes: list[dict], tasa: float = 0.6,
+                        reservado: str | None = None) -> tuple[int, float]:
+    """Una parte de los asistentes responde la encuesta (como lo harían desde 'Mis encuestas').
+
+    `reservado` (un email) asiste pero no responde: le queda la encuesta pendiente para mostrarla en vivo."""
+    media = SATISF_TIPO[ev["tipo"]] + CALIDAD_ORG.get(ev["_org"], 0.0)
+    if ev.get("salaCapacidad") and len(presentes) > ev["salaCapacidad"]:
+        media -= 0.7  # sala desbordada: la gente queda disconforme
+    puntos = []
+    for x in presentes:
+        if x["email"] == reservado or random.random() > tasa:
+            continue
+        p = min(5, max(1, round(random.gauss(media, 0.75))))
+        cuerpo = {"inscripcionId": x["id"], "puntaje": p, "recomendaria": p >= 4,
+                  "comentario": COMENTARIOS[p] if random.random() < 0.25 else None}
+        st, _ = api.como(x["email"], "POST", "/api/encuestas", cuerpo)
+        if st == 201:
+            puntos.append(p)
+    return len(puntos), (sum(puntos) / len(puntos) if puntos else 0.0)
+
+
+def fase_hoy(api: Api, salas, gente, cantidad: int, tasa_respuesta: float = 0.6,
+             reservado: str | None = "estudiante@uni.edu.ar") -> list[dict]:
+    titulo("3. Eventos de hoy: inscripción, asistencia, cierre y encuestas")
     momento = ahora()
     if momento.hour >= 23:
         print("  Son más de las 23 h: se omite esta fase (volvé a correrla mañana).")
@@ -264,7 +297,12 @@ def fase_hoy(api: Api, salas, gente, cantidad: int) -> list[dict]:
         if not ev:
             continue
         api.como(ev["_org"], "POST", f"/api/eventos/{ev['id']}/publicar")
-        inscriptos = inscribir(api, ev, gente)
+        # el usuario "reservado" se anota primero, para no quedarse afuera si el cupo se llena
+        primero = []
+        if reservado:
+            st, _ = api.como(reservado, "POST", f"/api/eventos/{ev['id']}/inscripcion")
+            primero = [reservado] if st == 201 else []
+        inscriptos = primero + inscribir(api, ev, gente)
         # predicción ANTES del evento (para comparar después con lo real)
         api.como(ev["_org"], "POST", f"/api/eventos/{ev['id']}/prediccion")
 
@@ -272,7 +310,7 @@ def fase_hoy(api: Api, salas, gente, cantidad: int) -> list[dict]:
         _, _, tasa, _ = TIPOS[ev["tipo"]]
         tasa += {"SOLEADO": 0, "NUBLADO": -0.03, "LLUVIA": -0.14}[ev["clima"]] + random.gauss(0, 0.05)
         st, lista = api.como("apoyo@uni.edu.ar", "GET", f"/api/eventos/{ev['id']}/inscriptos")
-        presentes = [x for x in lista if random.random() < tasa] if st == 200 else []
+        presentes = [x for x in lista if random.random() < tasa or x["email"] == reservado] if st == 200 else []
         metodos = {"QR": 0, "CODIGO": 0, "LISTA": 0}
         for x in presentes:
             metodo = random.choices(["QR", "CODIGO", "LISTA"], [0.6, 0.15, 0.25])[0]
@@ -281,8 +319,10 @@ def fase_hoy(api: Api, salas, gente, cantidad: int) -> list[dict]:
             st, _ = api.como("apoyo@uni.edu.ar", "POST", f"/api/eventos/{ev['id']}/asistencias", cuerpo)
             metodos[metodo] += st == 200
         api.como(ev["_org"], "POST", f"/api/eventos/{ev['id']}/finalizar")
+        n_enc, prom = responder_encuestas(api, ev, presentes, tasa_respuesta, reservado)
+        encuesta = f" · {n_enc} encuestas (promedio {prom:.1f}/5)".replace(".", ",") if n_enc else ""
         print(f"  ✓ {ev['horaInicio'][:5]} {ev['titulo']:<40} {len(inscriptos)} inscriptos → {len(presentes)} asistieron "
-              f"(QR {metodos['QR']}, código {metodos['CODIGO']}, lista {metodos['LISTA']}) · finalizado")
+              f"(QR {metodos['QR']}, código {metodos['CODIGO']}, lista {metodos['LISTA']}) · finalizado{encuesta}")
         hechos.append(ev)
     return hechos
 
@@ -342,6 +382,13 @@ def main():
                     help="sólo inscribe gente al evento con ese id (se ve en la URL) y termina")
     ap.add_argument("--cantidad", type=int, default=40, help="inscripciones a sumar con --llenar (default %(default)s)")
     ap.add_argument("--semilla", type=int, default=None, help="semilla aleatoria para repetir la misma simulación")
+    ap.add_argument("--cierres", type=int, default=None, metavar="N",
+                    help="sólo emula el cierre de N eventos de hoy (asistencia, finalización y encuestas) y reentrena")
+    ap.add_argument("--tasa-respuesta", type=float, default=0.6,
+                    help="proporción de asistentes que responde la encuesta (default %(default)s)")
+    ap.add_argument("--pendiente", default="estudiante@uni.edu.ar", metavar="EMAIL",
+                    help="usuario que asiste a los eventos cerrados pero deja la encuesta sin responder, para "
+                         "mostrarla en vivo (default %(default)s; \"\" para ninguno)")
     a = ap.parse_args()
     random.seed(a.semilla)
 
@@ -354,14 +401,18 @@ def main():
         fase_llenar(api, personas(api), a.llenar, a.cantidad)
         return
 
-    fase_altas(api, a.nuevos)
+    if a.cierres is None:
+        fase_altas(api, a.nuevos)
     st, salas = api.como("admin@uni.edu.ar", "GET", "/api/salas?soloActivas=true")
     gente = personas(api)
     print(f"  {len(gente)} personas disponibles para inscribirse · {len(salas)} salas activas")
 
-    futuros = fase_planificacion(api, salas, gente, a.futuros)
-    hoy = fase_hoy(api, salas, gente, a.hoy)
+    futuros = fase_planificacion(api, salas, gente, a.futuros) if a.cierres is None else []
+    hoy = fase_hoy(api, salas, gente, a.hoy if a.cierres is None else a.cierres, a.tasa_respuesta, a.pendiente or None)
     fase_analitica(api)
+    if a.pendiente and hoy:
+        print(f"  {a.pendiente} asistió a los eventos cerrados y tiene la encuesta pendiente: "
+              f"entrá con ese usuario y abrí 'Encuestas'.")
 
     titulo("Listo")
     print(f"  {len(futuros)} eventos próximos y {len(hoy)} eventos realizados hoy en {time.time() - inicio:.0f} s.")
