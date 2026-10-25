@@ -46,22 +46,25 @@ Estado: ✅ OK · ❌ Falla · ⏳ Pendiente
 | ID | Caso de uso | Pasos | Resultado esperado | Resultado obtenido | Estado |
 |---|---|---|---|---|---|
 | CP-01 | Seguridad | Ingresar con estudiante@ y contraseña incorrecta | Mensaje de error, no entra | | ⏳ |
-| CP-02 | Seguridad | Como estudiante, abrir /organizador/eventos | No tiene acceso | | ⏳ |
+| CP-02 | Seguridad | Como estudiante, abrir /organizador/eventos/nuevo | No tiene acceso | | ⏳ |
 | CP-03 | CU1 CRUD | Como organizador, crear un evento con sala y horario libre | Se crea en estado borrador | | ⏳ |
-| CP-04 | CU1 CRUD | Crear otro evento en la misma sala y horario | Rechazo por superposición | | ⏳ |
-| CP-05 | CU1 CRUD | Publicar, editar y cancelar el evento | Cambia el estado en cada paso | | ⏳ |
-| CP-06 | CU2 Inscripción | Como estudiante, inscribirse a un evento publicado | Aparece en "Mis inscripciones" con QR | | ⏳ |
-| CP-07 | CU2 Inscripción | Inscribirse a un evento con cupo lleno | Mensaje de cupo completo | | ⏳ |
-| CP-08 | CU3 Asistencia | Como apoyo, registrar asistencia por código | Queda como presente | | ⏳ |
-| CP-09 | CU3 Asistencia | Registrar dos veces la misma asistencia | No se duplica | | ⏳ |
-| CP-10 | CU4 Panel | Como organizador, abrir el Panel | Indicadores y lista de eventos | | ⏳ |
-| CP-11 | CU5 Predicción | Abrir "Ver predicción" de un evento próximo | Asistencia estimada, intervalo y sala recomendada | | ⏳ |
-| CP-12 | Encuestas | Como estudiante, responder una encuesta pendiente | "¡Gracias!" y baja el contador | | ⏳ |
-| CP-13 | Encuestas | Como organizador, ver estadísticas de un evento finalizado | Promedio, distribución y comentarios | | ⏳ |
+| CP-04 | CU1 CRUD | Como organizador, crear un evento seleccionando una fecha anterior a la actual | No se permite crear un evento con fecha pasada | | ⏳ |
+| CP-05 | CU1 CRUD | Crear otro evento en la misma sala y horario | Rechazo por superposición | | ⏳ |
+| CP-06 | CU1 CRUD | Publicar, editar y cancelar el evento | Cambia el estado en cada paso | | ⏳ |
+| CP-07 | CU2 Inscripción | Como estudiante, inscribirse a un evento publicado | Aparece en "Mis inscripciones" con QR | | ⏳ |
+| CP-08 | CU2 Inscripción | Inscribirse a un evento con cupo lleno | Mensaje de cupo completo | | ⏳ |
+| CP-09 | CU2 Inscripción | Como estudiante intentar inscribirse nuevamente a un mismo evento | No se permite generar la inscripción, solo cancelar la actual | | ⏳ |
+| CP-10 | CU3 Asistencia | Como apoyo, registrar asistencia por código | Queda como presente | | ⏳ |
+| CP-11 | CU3 Asistencia | Registrar dos veces la misma asistencia | No se duplica | | ⏳ |
+| CP-12 | CU4 Panel | Como organizador, abrir el Panel | Indicadores y lista de eventos | | ⏳ |
+| CP-13 | CU5 Predicción | Abrir "Ver predicción" de un evento próximo | Asistencia estimada, intervalo y sala recomendada | | ⏳ |
+| CP-14 | Encuestas | Como estudiante, responder una encuesta pendiente | "¡Gracias!" y baja el contador | | ⏳ |
+| CP-15 | Encuestas | Como organizador, ver estadísticas de un evento finalizado | Promedio, distribución y comentarios | | ⏳ |
+| CP-16 | Usabilidad | Abrir la app y utilizarla desde distintos dispositivos(celular,tablet)| Los elementos se ven y funcionan correctamente, es responsive | | ⏳ |
 
 ## 6. Criterio de aprobación
 
-El sistema se considera aprobado si pasan las 13 pruebas automáticas y todos los casos manuales de prioridad alta (CP-01 a CP-12).
+El sistema se considera aprobado si pasan las 13 pruebas automáticas y todos los casos manuales de prioridad alta (CP-01 a CP-15).
 
 ## 7. Registro de defectos
 
